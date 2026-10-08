@@ -1,0 +1,58 @@
+syntax = "proto3";
+
+package chat;
+
+option go_package = "github.com/yourname/e2e-chat/proto";
+
+service ChatService {
+  rpc Connect (stream ClientMessage) returns (stream ServerMessage);
+}
+
+message ClientMessage {
+  oneof payload {
+    RegisterRoomRequest register_room = 1;
+    FindRoomRequest find_room = 2;
+    AcceptConnectionRequest accept_connection = 3;
+    EncryptedPayload chat_message = 4;
+  }
+}
+
+message ServerMessage {
+  oneof payload {
+    Error error = 1;
+    IncomingConnectionRequest incoming_request = 2;
+    ConnectionEstablished connection_established = 3;
+    EncryptedPayload chat_message = 4;
+  }
+}
+
+message RegisterRoomRequest {
+  string keyword = 1;
+  string public_key = 2;
+}
+
+message FindRoomRequest {
+  string keyword = 1;
+  string public_key = 2;
+}
+
+message AcceptConnectionRequest {
+  bool accepted = 1;
+}
+
+message IncomingConnectionRequest {
+  string peer_public_key = 1;
+}
+
+message ConnectionEstablished {
+  string peer_public_key = 1;
+}
+
+message EncryptedPayload {
+  bytes nonce = 1;
+  bytes ciphertext = 2;
+}
+
+message Error {
+  string message = 1;
+}
