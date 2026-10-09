@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package chat;
 
-option go_package = "github.com/yourname/e2e-chat/proto";
+option go_package = "e2ee-chat/proto";
 
 service ChatService {
   rpc Connect (stream ClientMessage) returns (stream ServerMessage);
