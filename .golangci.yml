@@ -1,0 +1,29 @@
+version: "2"
+
+formatters:
+  enable:
+    - gofmt
+  exclusions:
+    generated: lax
+
+linters:
+  default: standard
+  enable:
+    - copyloopvar
+    - misspell
+    - revive
+    - unconvert
+    - unparam
+  settings:
+    revive:
+      rules:
+        # Package comments are already curated by hand; don't force a
+        # boilerplate comment on every package.
+        - name: package-comments
+          disabled: true
+  exclusions:
+    rules:
+      # Tests legitimately ignore deferred Close errors and use magic numbers.
+      - path: _test\.go
+        linters:
+          - errcheck

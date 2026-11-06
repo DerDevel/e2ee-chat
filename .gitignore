@@ -1,1 +1,25 @@
+# Generated protobuf code (regenerate with `make proto`)
 *.pb.go
+
+# TLS materials and secrets — never commit these
+*.crt
+*.key
+*.pem
+*.p12
+
+# Local configuration
+.env
+.env.*
+
+# Build artifacts
+/bin/
+/client/client
+/server/server
+
+# Editor / OS
+.DS_Store
+*.swp
+
+# Local tooling state
+.mimosa/
+.video_agent/

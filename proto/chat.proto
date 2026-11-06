@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package chat;
 
-option go_package = "github.com/yourname/e2e-chat/proto";
+option go_package = "e2ee-chat/proto";
 
 service ChatService {
   rpc Connect (stream ClientMessage) returns (stream ServerMessage);
@@ -14,6 +14,7 @@ message ClientMessage {
     FindRoomRequest find_room = 2;
     AcceptConnectionRequest accept_connection = 3;
     EncryptedPayload chat_message = 4;
+    KemCiphertext kem_ciphertext = 5;
   }
 }
 
@@ -23,17 +24,20 @@ message ServerMessage {
     IncomingConnectionRequest incoming_request = 2;
     ConnectionEstablished connection_established = 3;
     EncryptedPayload chat_message = 4;
+    KemCiphertext kem_ciphertext = 5;
   }
 }
 
 message RegisterRoomRequest {
   string keyword = 1;
   string public_key = 2;
+  string kem_public_key = 3;
 }
 
 message FindRoomRequest {
   string keyword = 1;
   string public_key = 2;
+  string kem_public_key = 3;
 }
 
 message AcceptConnectionRequest {
@@ -42,15 +46,23 @@ message AcceptConnectionRequest {
 
 message IncomingConnectionRequest {
   string peer_public_key = 1;
+  string peer_kem_public_key = 2;
 }
 
 message ConnectionEstablished {
   string peer_public_key = 1;
+  string peer_kem_public_key = 2;
 }
 
 message EncryptedPayload {
   bytes nonce = 1;
   bytes ciphertext = 2;
+}
+
+// KemCiphertext is the ML-KEM encapsulation ciphertext exchanged once, right
+// after the connection is established, to complete the hybrid key agreement.
+message KemCiphertext {
+  bytes ciphertext = 1;
 }
 
 message Error {

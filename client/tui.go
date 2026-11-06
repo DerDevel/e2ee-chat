@@ -4,11 +4,14 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
+
+const maxHistory = 500
 
 var (
 	titleStyle  = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#7D56F4")).MarginBottom(1)
@@ -18,6 +21,12 @@ var (
 	systemStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("241")).Italic(true)
 	cursorStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("42")).Blink(true)
 )
+
+const helpText = `Доступные команды:
+  /join <слово>  — подключиться к комнате по кодовому слову
+  /nick <имя>    — сменить никнейм
+  /help          — показать эту справку
+  /quit          — выход (также Ctrl+C)`
 
 type chatMsg struct{ nick, text string }
 type systemMsg struct{ text string }
@@ -59,6 +68,14 @@ func (m model) Init() tea.Cmd {
 	return tea.Batch(m.spinner.Tick, tick())
 }
 
+// add appends a rendered line to the history, keeping the buffer bounded.
+func (m *model) add(line string) {
+	m.messages = append(m.messages, line)
+	if excess := len(m.messages) - maxHistory; excess > 0 {
+		m.messages = m.messages[excess:]
+	}
+}
+
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
@@ -75,57 +92,77 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, cmd
 
 	case systemMsg:
-		// ОБРАБОТКА ОТКЛЮЧЕНИЙ
-		if msg.text == "PEER_LEFT" || msg.text == "SERVER_DISCONNECTED" {
+		switch msg.text {
+		case "PEER_LEFT", "SERVER_DISCONNECTED":
 			fmt.Print("\a")         // Звук
 			m.messages = []string{} // Очистка истории
-			m.state = "setup_room"  // Возврат в меню
 			if msg.text == "PEER_LEFT" {
-				m.messages = append(m.messages, systemStyle.Render("* Собеседник отключился."))
+				m.state = "setup_room" // Возврат в меню
+				m.add(systemStyle.Render("* Собеседник отключился."))
+				m.add(systemStyle.Render("* Введите новое кодовое слово (или /join <слово>):"))
 			} else {
-				m.messages = append(m.messages, errorStyle.Render("* Соединение с сервером потеряно."))
+				m.state = "dead"
+				m.add(errorStyle.Render("* Соединение с сервером потеряно. Перезапустите клиент."))
 			}
-			m.messages = append(m.messages, systemStyle.Render("* Введите новое кодовое слово (или /join <слово>):"))
 			return m, nil
-		}
-
-		m.messages = append(m.messages, systemStyle.Render("* "+msg.text))
-		if msg.text == "REQUEST_INCOMING" {
-			fmt.Print("\a")
-			m.state = "request"
-		} else if msg.text == "CONNECTED" {
-			m.state = "chat"
-		} else if strings.Contains(msg.text, "не найдена") || strings.Contains(msg.text, "разорвано") || strings.Contains(msg.text, "отклонен") {
+		case "PEER_REJECTED":
+			m.add(systemStyle.Render("* Собеседник отклонил запрос."))
 			m.state = "setup_room"
+		case "REQUEST_INCOMING":
+			// Only a client that is actually waiting to pair may be pushed
+			// into the accept prompt; mid-chat the relay must not be able to
+			// hijack keystrokes (SEC-007).
+			switch m.state {
+			case "waiting", "setup_room", "request":
+				fmt.Print("\a")
+				m.state = "request"
+			default:
+				m.add(systemStyle.Render("* Входящий запрос проигнорирован (активен другой чат)."))
+			}
+		case "HANDSHAKE_WAIT":
+			m.state = "waiting_handshake"
+		case "CONNECTED":
+			m.state = "chat"
+		default:
+			m.add(systemStyle.Render("* " + msg.text))
 		}
 
 	case chatMsg:
 		fmt.Print("\a")
-		m.messages = append(m.messages, fmt.Sprintf("[%s]: %s", nickStyle.Render(msg.nick), msg.text))
+		m.add(fmt.Sprintf("[%s]: %s", nickStyle.Render(msg.nick), msg.text))
 
 	case errorMsg:
-		m.messages = append(m.messages, errorStyle.Render("[ERROR] "+msg.text))
-		// Если комната занята, возвращаемся к вводу
-		if strings.Contains(msg.text, "занята") {
+		m.add(errorStyle.Render("[ERROR] " + msg.text))
+		// Ошибки на этапе ожидания возвращают к вводу кодового слова.
+		if m.state == "waiting" || m.state == "waiting_handshake" || m.state == "request" {
 			m.state = "setup_room"
 		}
 
 	case tea.KeyMsg:
+		if m.state == "dead" {
+			return m, nil // соединения нет — ввод игнорируется
+		}
 		switch msg.Type {
 		case tea.KeyCtrlC:
 			return m, tea.Quit
 		case tea.KeyEnter:
-			cmd := m.handleEnter()
+			cmd, quit := m.dispatch()
 			if cmd != "" {
 				m.cmdCh <- cmd
 			}
 			m.input = ""
+			if quit {
+				return m, tea.Quit
+			}
 		case tea.KeyBackspace:
-			if len(m.input) > 0 {
-				m.input = m.input[:len(m.input)-1]
+			// Delete whole runes so multi-byte input (Cyrillic, emoji)
+			// survives editing.
+			r := []rune(m.input)
+			if len(r) > 0 {
+				m.input = string(r[:len(r)-1])
 			}
 		case tea.KeyRunes:
-			m.input += string(msg.Runes)
+			m.input += sanitize(string(msg.Runes), maxTextRunes)
 		case tea.KeySpace:
 			m.input += " "
 		}
@@ -133,40 +170,89 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m *model) handleEnter() string {
+// dispatch interprets the input line for the current state. It returns the
+// command for the network loop (possibly empty) and whether the program
+// should quit.
+func (m *model) dispatch() (string, bool) {
 	switch m.state {
 	case "setup_nick":
-		m.nickname = m.input
+		nick := sanitize(strings.TrimSpace(m.input), maxNickRunes)
+		if nick == "" {
+			m.add(systemStyle.Render("* Никнейм не может быть пустым."))
+			return "", false
+		}
+		m.nickname = nick
 		m.state = "setup_room"
-		m.messages = append(m.messages, systemStyle.Render("* Никнейм установлен: "+m.nickname))
-		return "nick:" + m.nickname
+		m.add(systemStyle.Render("* Никнейм установлен: " + m.nickname))
+		return "nick:" + m.nickname, false
+
 	case "setup_room":
-		if strings.HasPrefix(m.input, "/join ") {
-			m.keyword = strings.TrimPrefix(m.input, "/join ")
+		line := strings.TrimSpace(m.input)
+		switch {
+		case line == "" || line == "/help":
+			m.add(systemStyle.Render(helpText))
+			return "", false
+		case line == "/quit":
+			return "", true
+		case strings.HasPrefix(line, "/join "):
+			kw := strings.TrimSpace(strings.TrimPrefix(line, "/join "))
+			if kw == "" {
+				m.add(systemStyle.Render("* Укажите кодовое слово: /join <слово>"))
+				return "", false
+			}
+			m.keyword = kw
 			m.state = "waiting"
-			m.messages = append(m.messages, systemStyle.Render("* Поиск комнаты "+m.keyword+"..."))
-			return "find:" + m.keyword
+			m.add(systemStyle.Render("* Поиск комнаты " + m.keyword + "..."))
+			return "find:" + kw, false
+		default:
+			kw := line
+			m.keyword = kw
+			m.state = "waiting"
+			m.add(systemStyle.Render("* Ожидание подключения по ключу " + m.keyword + "..."))
+			return "register:" + kw, false
 		}
-		m.keyword = m.input
-		m.state = "waiting"
-		m.messages = append(m.messages, systemStyle.Render("* Ожидание подключения по ключу "+m.keyword+"..."))
-		return "register:" + m.keyword
+
 	case "request":
-		if m.input == "y" || m.input == "Y" {
+		switch m.input {
+		case "y", "Y":
 			m.state = "waiting"
-			m.messages = append(m.messages, systemStyle.Render("* Запрос принят. Установка соединения..."))
-			return "accept"
+			m.add(systemStyle.Render("* Запрос принят. Установка соединения..."))
+			return "accept", false
+		case "n", "N":
+			m.state = "setup_room"
+			m.add(systemStyle.Render("* Запрос отклонен."))
+			return "reject", false
+		default:
+			m.add(systemStyle.Render("* Ответьте y (да) или n (нет)."))
+			return "", false
 		}
-		m.state = "setup_room"
-		m.messages = append(m.messages, systemStyle.Render("* Запрос отклонен."))
-		return "reject"
+
 	case "chat":
-		if m.input != "" {
-			m.messages = append(m.messages, fmt.Sprintf("[%s]: %s", selfStyle.Render(m.nickname), m.input))
-			return "msg:" + m.input
+		line := m.input
+		switch {
+		case line == "/help":
+			m.add(systemStyle.Render(helpText))
+			return "", false
+		case line == "/quit":
+			return "", true
+		case strings.HasPrefix(line, "/nick "):
+			nick := sanitize(strings.TrimSpace(strings.TrimPrefix(line, "/nick ")), maxNickRunes)
+			if nick == "" {
+				m.add(systemStyle.Render("* Никнейм не может быть пустым."))
+				return "", false
+			}
+			m.nickname = nick
+			m.add(systemStyle.Render("* Никнейм изменён на " + nick))
+			return "nick:" + nick, false
+		case strings.HasPrefix(line, "/"):
+			m.add(systemStyle.Render("* Неизвестная команда. /help — список команд."))
+			return "", false
+		case line != "":
+			m.add(fmt.Sprintf("[%s]: %s", selfStyle.Render(m.nickname), line))
+			return "msg:" + line, false
 		}
 	}
-	return ""
+	return "", false
 }
 
 func (m model) View() string {
@@ -210,23 +296,40 @@ func (m model) View() string {
 		s.WriteString(m.input)
 		s.WriteString(cursorStyle.Render(cursorChar))
 	case "setup_room":
-		s.WriteString("Кодовое слово (или /join <слово>): ")
+		s.WriteString("Кодовое слово (или /join <слово>, /help): ")
 		s.WriteString(m.input)
 		s.WriteString(cursorStyle.Render(cursorChar))
 	case "waiting":
 		s.WriteString(m.spinner.View() + " ")
 		s.WriteString(systemStyle.Render("Ожидание... (Ctrl+C для выхода)"))
+	case "waiting_handshake":
+		s.WriteString(m.spinner.View() + " ")
+		s.WriteString(systemStyle.Render("Согласование ключей..."))
 	case "request":
 		s.WriteString(errorStyle.Render("Разрешить подключение? (y/n): "))
 		s.WriteString(m.input)
 		s.WriteString(cursorStyle.Render(cursorChar))
 	case "chat":
-		s.WriteString(selfStyle.Render("[" + m.nickname + "] > "))
-		s.WriteString(m.input)
+		prompt := "[" + m.nickname + "] > "
+		// Keep the prompt + at least one rune of input on one line.
+		maxRunes := m.width - utf8.RuneCountInString(prompt) - 2
+		shown := m.input
+		if maxRunes > 0 && utf8.RuneCountInString(shown) > maxRunes {
+			r := []rune(shown)
+			shown = string(r[len(r)-maxRunes:]) // видим хвост длинной строки
+		}
+		s.WriteString(selfStyle.Render(prompt))
+		s.WriteString(shown)
 		s.WriteString(cursorStyle.Render(cursorChar))
+	case "dead":
+		s.WriteString(errorStyle.Render("Соединение с сервером потеряно. Нажмите Ctrl+C для выхода."))
 	}
 
 	s.WriteString("\n\n")
-	s.WriteString(systemStyle.Render("Нажмите Ctrl+C для выхода."))
+	if m.state == "dead" {
+		s.WriteString(systemStyle.Render("Нажмите Ctrl+C для выхода."))
+	} else {
+		s.WriteString(systemStyle.Render("Ctrl+C — выход. /help — справка."))
+	}
 	return s.String()
 }
