@@ -21,4 +21,6 @@ pin="$(openssl x509 -in "$out_dir/server.crt" -noout -fingerprint -sha256 \
 echo "Generated $out_dir/server.crt and $out_dir/server.key"
 echo
 echo "Trust the server from clients with:"
+echo "  ./client/client -pin $pin"
+echo "or:"
 echo "  export E2EE_TLS_PIN=$pin"

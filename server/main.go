@@ -12,6 +12,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
+	"flag"
 	"log/slog"
 	"net"
 	"os"
@@ -67,17 +68,27 @@ type config struct {
 	tlsClientCA   string
 }
 
+// loadConfig fills the server configuration from command-line flags, each of
+// which falls back to its E2EE_* environment variable (flags win).
 func loadConfig() config {
 	db, _ := strconv.Atoi(os.Getenv("E2EE_REDIS_DB"))
-	return config{
-		listen:        envOr("E2EE_LISTEN", ":50051"),
-		redisAddr:     envOr("E2EE_REDIS_ADDR", "127.0.0.1:6379"),
-		redisPassword: os.Getenv("E2EE_REDIS_PASSWORD"),
-		redisDB:       db,
-		tlsCert:       envOr("E2EE_TLS_CERT", "server.crt"),
-		tlsKey:        envOr("E2EE_TLS_KEY", "server.key"),
-		tlsClientCA:   os.Getenv("E2EE_TLS_CLIENT_CA"),
-	}
+	var cfg config
+	flag.StringVar(&cfg.listen, "listen", envOr("E2EE_LISTEN", ":50051"),
+		"адрес прослушивания (env E2EE_LISTEN)")
+	flag.StringVar(&cfg.redisAddr, "redis-addr", envOr("E2EE_REDIS_ADDR", "127.0.0.1:6379"),
+		"адрес Redis (env E2EE_REDIS_ADDR)")
+	flag.StringVar(&cfg.redisPassword, "redis-password", os.Getenv("E2EE_REDIS_PASSWORD"),
+		"пароль Redis (env E2EE_REDIS_PASSWORD)")
+	flag.IntVar(&cfg.redisDB, "redis-db", db,
+		"номер БД Redis (env E2EE_REDIS_DB)")
+	flag.StringVar(&cfg.tlsCert, "tls-cert", envOr("E2EE_TLS_CERT", "server.crt"),
+		"сертификат TLS (env E2EE_TLS_CERT)")
+	flag.StringVar(&cfg.tlsKey, "tls-key", envOr("E2EE_TLS_KEY", "server.key"),
+		"приватный ключ TLS (env E2EE_TLS_KEY)")
+	flag.StringVar(&cfg.tlsClientCA, "tls-client-ca", os.Getenv("E2EE_TLS_CLIENT_CA"),
+		"CA-бандл клиентов для mTLS (env E2EE_TLS_CLIENT_CA)")
+	flag.Parse()
+	return cfg
 }
 
 func envOr(key, def string) string {

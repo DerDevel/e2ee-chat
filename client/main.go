@@ -8,6 +8,7 @@ package main
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"log/slog"
 	"net"
@@ -95,13 +96,52 @@ func main() {
 	}
 }
 
+// clientFlags holds the command-line configuration. Every flag falls back to
+// its E2EE_* environment variable, so both styles work; flags win.
+type clientFlags struct {
+	addr       string
+	serverName string
+	caFile     string
+	pin        string
+	insecure   bool
+}
+
+func parseClientFlags() clientFlags {
+	var f clientFlags
+	flag.StringVar(&f.addr, "addr", envOr("E2EE_SERVER_ADDR", "localhost:50051"),
+		"адрес сервера (env E2EE_SERVER_ADDR)")
+	flag.StringVar(&f.serverName, "server-name", os.Getenv("E2EE_TLS_SERVER_NAME"),
+		"ожидаемое имя в сертификате сервера (env E2EE_TLS_SERVER_NAME; по умолчанию — host из -addr)")
+	flag.StringVar(&f.caFile, "ca", os.Getenv("E2EE_TLS_CA"),
+		"PEM-бандл доверенного CA (env E2EE_TLS_CA)")
+	flag.StringVar(&f.pin, "pin", os.Getenv("E2EE_TLS_PIN"),
+		"SHA-256 pin сертификата сервера, hex (env E2EE_TLS_PIN)")
+	flag.BoolVar(&f.insecure, "insecure", os.Getenv("E2EE_TLS_INSECURE") == "1",
+		"отключить проверку TLS — только для локальной разработки! (env E2EE_TLS_INSECURE=1)")
+	flag.Parse()
+
+	if f.serverName == "" {
+		host, _, err := net.SplitHostPort(f.addr)
+		if err != nil {
+			host = f.addr
+		}
+		f.serverName = host
+	}
+	return f
+}
+
 func run() error {
 	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelWarn})))
 
-	addr := envOr("E2EE_SERVER_ADDR", "localhost:50051")
-	opts := clientTLSOptions(addr)
+	fl := parseClientFlags()
+	opts := transport.ClientOptions{
+		ServerName: fl.serverName,
+		CAFile:     fl.caFile,
+		PinSHA256:  fl.pin,
+		Insecure:   fl.insecure,
+	}
 	if opts.Insecure {
-		slog.Warn("TLS verification disabled (E2EE_TLS_INSECURE=1); dev use only")
+		slog.Warn("TLS verification disabled; dev use only")
 	}
 	tlsCfg, err := transport.ClientTLSConfig(opts)
 	if err != nil {
@@ -111,7 +151,7 @@ func run() error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	conn, err := grpc.NewClient(addr,
+	conn, err := grpc.NewClient(fl.addr,
 		grpc.WithTransportCredentials(credentials.NewTLS(tlsCfg)),
 		grpc.WithKeepaliveParams(keepalive.ClientParameters{
 			Time:    30 * time.Second,
@@ -357,19 +397,6 @@ func (a *app) decrypt(nonce, ct []byte) (string, string, error) {
 
 type keyPair struct {
 	X, KEM string
-}
-
-func clientTLSOptions(addr string) transport.ClientOptions {
-	host, _, err := net.SplitHostPort(addr)
-	if err != nil {
-		host = addr
-	}
-	return transport.ClientOptions{
-		ServerName: envOr("E2EE_TLS_SERVER_NAME", host),
-		CAFile:     os.Getenv("E2EE_TLS_CA"),
-		PinSHA256:  os.Getenv("E2EE_TLS_PIN"),
-		Insecure:   os.Getenv("E2EE_TLS_INSECURE") == "1",
-	}
 }
 
 func envOr(key, def string) string {

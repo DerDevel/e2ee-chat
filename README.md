@@ -100,10 +100,11 @@ export E2EE_REDIS_PASSWORD="$REDIS_PASSWORD"
 
 ```bash
 # терминал 2 — создает комнату
-E2EE_TLS_PIN=<пин из шага 1> ./client/client
+./client/client -pin <пин из шага 1>
 
-# терминал 3 — подключается
-E2EE_TLS_PIN=<пин из шага 1> ./client/client
+# терминал 3 — подключается к удаленному серверу той же командой:
+# ./client/client -addr chat.example.com:50051 -pin <пин>
+./client/client -pin <пин из шага 1>
 ```
 
 Дальше: никнеймы → первый клиент вводит кодовое слово, второй — `/join <слово>`
@@ -242,26 +243,43 @@ E2EE_TLS_PIN=<пин из шага 1> ./client/client
 
 ## ⚙️ Конфигурация
 
+Всё настраивается флагами командной строки **или** переменными окружения
+(флаг имеет приоритет). Полный список — `-h` у любого из бинарей.
+
 ### Сервер
 
-| Переменная | По умолчанию | Описание |
-|---|---|---|
-| `E2EE_LISTEN` | `:50051` | Адрес прослушивания |
-| `E2EE_REDIS_ADDR` | `127.0.0.1:6379` | Адрес Redis |
-| `E2EE_REDIS_PASSWORD` | — | Пароль Redis |
-| `E2EE_REDIS_DB` | `0` | Номер БД Redis |
-| `E2EE_TLS_CERT` / `E2EE_TLS_KEY` | `server.crt` / `server.key` | Сертификат и ключ TLS |
-| `E2EE_TLS_CLIENT_CA` | — | CA-бандл клиентов для mTLS |
+| Флаг | Переменная | По умолчанию | Описание |
+|---|---|---|---|
+| `-listen` | `E2EE_LISTEN` | `:50051` | Адрес прослушивания |
+| `-redis-addr` | `E2EE_REDIS_ADDR` | `127.0.0.1:6379` | Адрес Redis |
+| `-redis-password` | `E2EE_REDIS_PASSWORD` | — | Пароль Redis |
+| `-redis-db` | `E2EE_REDIS_DB` | `0` | Номер БД Redis |
+| `-tls-cert` | `E2EE_TLS_CERT` | `server.crt` | Сертификат TLS |
+| `-tls-key` | `E2EE_TLS_KEY` | `server.key` | Приватный ключ TLS |
+| `-tls-client-ca` | `E2EE_TLS_CLIENT_CA` | — | CA-бандл клиентов для mTLS |
 
 ### Клиент
 
-| Переменная | По умолчанию | Описание |
-|---|---|---|
-| `E2EE_SERVER_ADDR` | `localhost:50051` | Адрес сервера |
-| `E2EE_TLS_SERVER_NAME` | host из адреса | Ожидаемое имя в сертификате |
-| `E2EE_TLS_CA` | системные корни | PEM-бандл доверенного CA |
-| `E2EE_TLS_PIN` | — | SHA-256 pin сертификата (для self-signed) |
-| `E2EE_TLS_INSECURE` | — | `1` — отключить проверку. **Только для локальной разработки** |
+| Флаг | Переменная | По умолчанию | Описание |
+|---|---|---|---|
+| `-addr` | `E2EE_SERVER_ADDR` | `localhost:50051` | **Адрес сервера для соединения** |
+| `-server-name` | `E2EE_TLS_SERVER_NAME` | host из `-addr` | Ожидаемое имя в сертификате |
+| `-ca` | `E2EE_TLS_CA` | системные корни | PEM-бандл доверенного CA |
+| `-pin` | `E2EE_TLS_PIN` | — | SHA-256 pin сертификата (для self-signed) |
+| `-insecure` | `E2EE_TLS_INSECURE=1` | выкл | Отключить проверку TLS. **Только локальная разработка** |
+
+Примеры:
+
+```bash
+# подключиться к удаленному серверу с доверенным CA (Let's Encrypt и т.п.)
+./client/client -addr chat.example.com:50051
+
+# self-signed сервер — по pin (см. make certs)
+./client/client -addr 203.0.113.7:50051 -pin 91c0ac3e...
+
+# то же через переменные окружения (удобно в .env / CI)
+E2EE_SERVER_ADDR=chat.example.com:50051 ./client/client
+```
 
 Шаблон `.env` — в [`.env.example`](.env.example).
 
