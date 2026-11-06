@@ -1,5 +1,7 @@
-# Generated protobuf code (regenerate with `make proto`)
+# Generated protobuf code — committed for the proto package so that builds
+# and CI work without protoc installed. Regenerate with `make proto`.
 *.pb.go
+!proto/*.pb.go
 
 # TLS materials and secrets — never commit these
 *.crt
