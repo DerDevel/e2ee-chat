@@ -108,13 +108,13 @@ type clientFlags struct {
 
 func parseClientFlags() clientFlags {
 	var f clientFlags
-	flag.StringVar(&f.addr, "addr", envOr("E2EE_SERVER_ADDR", "localhost:50051"),
+	flag.StringVar(&f.addr, "addr", envOr("E2EE_SERVER_ADDR", "91.149.138.231:50051"),
 		"адрес сервера (env E2EE_SERVER_ADDR)")
 	flag.StringVar(&f.serverName, "server-name", os.Getenv("E2EE_TLS_SERVER_NAME"),
 		"ожидаемое имя в сертификате сервера (env E2EE_TLS_SERVER_NAME; по умолчанию — host из -addr)")
 	flag.StringVar(&f.caFile, "ca", os.Getenv("E2EE_TLS_CA"),
 		"PEM-бандл доверенного CA (env E2EE_TLS_CA)")
-	flag.StringVar(&f.pin, "pin", os.Getenv("E2EE_TLS_PIN"),
+	flag.StringVar(&f.pin, "pin", envOr("E2EE_TLS_PIN", "CF:EE:B8:91:3F:0C:DA:8E:CD:B6:0C:25:4C:D2:8C:22:2C:8C:56:A5:BC:EC:DF:3A:1B:D6:40:87:37:29:6A:62"),
 		"SHA-256 pin сертификата сервера, hex (env E2EE_TLS_PIN)")
 	flag.BoolVar(&f.insecure, "insecure", os.Getenv("E2EE_TLS_INSECURE") == "1",
 		"отключить проверку TLS — только для локальной разработки! (env E2EE_TLS_INSECURE=1)")
