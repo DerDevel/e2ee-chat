@@ -35,6 +35,14 @@
 
 ---
 
+## Установить одной командой:
+
+```
+curl -fsSL https://github.com/DerDevel/e2ee-chat/releases/latest/download/install.sh | sh
+```
+
+---
+
 ## 🎬 Демо
 
 Два терминала, сервер между ними видит только шифротекст:
