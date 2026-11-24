@@ -5,7 +5,7 @@ before:
 builds:
   - id: e2ee-chat-client
     main: ./client
-    binary: e2ee-chat-client
+    binary: e2ee-chat
     env:
       - CGO_ENABLED=0
     goos:

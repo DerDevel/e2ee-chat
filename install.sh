@@ -2,7 +2,7 @@
 set -e
 
 REPO="DerDevel/e2ee-chat"
-BINARY="e2ee-chat-client"
+BINARY="e2ee-chat"
 
 # Куда ставить: можно переопределить через INSTALL_DIR=...
 INSTALL_DIR="${INSTALL_DIR:-$HOME/.local/bin}"
