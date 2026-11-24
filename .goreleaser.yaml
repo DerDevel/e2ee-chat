@@ -21,6 +21,7 @@ builds:
 archives:
   - id: default
     formats: [tar.gz]
+    name_template: "{{ .Binary }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
     format_overrides:
       - goos: windows
         formats: [zip]
@@ -34,3 +35,22 @@ changelog:
     exclude:
       - "^docs:"
       - "^test:"
+
+release:
+  extra_files:
+    - glob: ./install.sh
+
+nfpms:
+  - id: e2ee-chat-client-deb
+    package_name: e2ee-chat-client
+    vendor: DerDevel
+    homepage: https://github.com/DerDevel/e2ee-chat
+    maintainer: DerDevel
+    description: "E2EE chat client"
+    license: MIT
+    formats:
+      - deb
+    bindir: /usr/bin
+    contents:
+      - src: ./install.sh
+        dst: /usr/share/e2ee-chat-client/install.sh
